@@ -1,0 +1,186 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_JC_TempConversionService_name": {
+            "defaultValue": "JC-TempConversionService",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_JC_TempConversionService_name')]",
+            "location": "westus2",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "triggers": {
+                        "manual": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "method": "POST",
+                                "relativePath": "/getFarenheit",
+                                "schema": {
+                                    "properties": {
+                                        "TempConversionRequest": {
+                                            "properties": {
+                                                "Celcius": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Calculate_Farenheit": {
+                            "runAfter": {
+                                "Initialize_Celcius_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "farenheit",
+                                        "type": "float",
+                                        "value": "@add(mul(variables('celcius'),1.8),32)"
+                                    }
+                                ]
+                            }
+                        },
+                        "Compose_Error_Response": {
+                            "runAfter": {
+                                "Initialize_Celcius_variable": [
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": {
+                                "error": {
+                                    "code": "Fail",
+                                    "message": "Invalid Celcius Value"
+                                }
+                            }
+                        },
+                        "Compose_Response_Body": {
+                            "runAfter": {
+                                "Calculate_Farenheit": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": {
+                                "TempConversionResponse": {
+                                    "Farenheit": "@variables('farenheit')",
+                                    "Status": "Success"
+                                }
+                            }
+                        },
+                        "Condition": {
+                            "actions": {},
+                            "runAfter": {},
+                            "else": {
+                                "actions": {
+                                    "Compose_-_False_Component": {
+                                        "runAfter": {},
+                                        "type": "Compose",
+                                        "inputs": {
+                                            "error": {
+                                                "code": "Fail",
+                                                "message": "Blank Payload"
+                                            }
+                                        }
+                                    },
+                                    "Response_2": {
+                                        "runAfter": {
+                                            "Compose_-_False_Component": [
+                                                "Succeeded"
+                                            ]
+                                        },
+                                        "type": "Response",
+                                        "kind": "Http",
+                                        "inputs": {
+                                            "body": "@outputs('Compose_-_False_Component')",
+                                            "statusCode": 400
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "not": {
+                                            "equals": [
+                                                "@triggerBody()",
+                                                "@null"
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Initialize_Celcius_variable": {
+                            "runAfter": {
+                                "Condition": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "celcius",
+                                        "type": "float",
+                                        "value": "@triggerBody()?['TempConversionRequest']?['Celcius']"
+                                    }
+                                ]
+                            }
+                        },
+                        "Response": {
+                            "runAfter": {
+                                "Compose_Response_Body": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Response",
+                            "kind": "Http",
+                            "inputs": {
+                                "body": "@outputs('Compose_Response_Body')",
+                                "statusCode": 200
+                            }
+                        },
+                        "Send_Error_Response": {
+                            "runAfter": {
+                                "Compose_Error_Response": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Response",
+                            "kind": "Http",
+                            "inputs": {
+                                "body": "@outputs('Compose_Error_Response')",
+                                "statusCode": 400
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {}
+            }
+        }
+    ]
+}
